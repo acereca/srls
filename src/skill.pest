@@ -1,0 +1,28 @@
+WHITESPACE = _{ (" " | NEWLINE) }
+
+token_char = _{(NUMBER | LETTER | "_")}
+token      =  @{ LETTER ~ token_char* }
+
+string = @{"\"" ~ (!"\"" ~ ANY)* ~ "\""}
+number = @{NUMBER+ ~ ("." ~ NUMBER+)? ~ ("e" ~ "-"? ~ NUMBER+)?}
+bool = {"t" | "nil"}
+literal = _{string | number | bool}
+
+COMMENT = _{";" ~ (!NEWLINE ~ ANY)* ~ NEWLINE}
+
+lisp_list = _{ "(" ~ expr* ~ ")" }
+lazy_list = _{ "'(" ~ expr* ~ ")" }
+cstyle_list = @{ token ~ lisp_list}
+
+list = { (cstyle_list | lisp_list | lazy_list) }
+
+assign = {token ~ "=" ~ (inline_expr | list | token)}
+inline_operand = _{(list | token | literal)}
+inline_operator = {("-" | "+" | "/" | "*")}
+inline_expr = {inline_operand ~ (inline_operator ~ inline_operand)+}
+
+get_operator = {("->" | "~>")}
+get = {token ~ get_operator ~ (list | token)}
+
+expr = _{(get | assign | list | token | literal)}
+skill = { SOI ~ expr* ~ EOI }
