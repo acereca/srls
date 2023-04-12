@@ -6,5 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+glob = "*"
 pest = "2.0"
 pest_derive = "2.0"
+tokio = { version = "1", features = ["full"] }
+tower-lsp = "*"
+serde = "*"
+serde_json = "*"
+tracing-subscriber = "*"
+dashmap = "5.4.0"
