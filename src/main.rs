@@ -1,16 +1,15 @@
 mod cache;
-use cache::DocumentCache;
+use cache::SymbolCache;
+
+mod skill;
+use skill::{parse_global_symbols, parse_skill};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::notification::Notification;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
-
-use crate::pest::Parser;
 
 extern crate glob;
 extern crate pest;
@@ -20,12 +19,8 @@ extern crate pest_derive;
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    cache: DocumentCache,
+    cache: SymbolCache,
 }
-
-#[derive(Parser)]
-#[grammar = "./skill.pest"]
-struct SkillParser;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct CustomNotificationParams {
@@ -67,9 +62,11 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, format!("pattern used: {:?}", pattern))
             .await;
+
         for entry in glob::glob(pattern.as_str()).expect("no file to cache in root_dir") {
             match entry {
                 Ok(path) => {
+                    self.cache.update(path.to_str().unwrap());
                     self.client
                         .log_message(MessageType::INFO, format!("caching {:?}", path.display()))
                         .await
@@ -132,27 +129,12 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, cparams: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let doc = cparams.text_document_position.text_document.uri.path();
-        // let line = cparams.text_document_position.position.line;
-        // let character = cparams.text_document_position.position.character;
-        let content = fs::read_to_string(doc).expect("could not read");
-        let file = SkillParser::parse(Rule::skill, &content)
-            .expect("unsuccessful parse")
-            .next()
-            .unwrap();
-
-        let mut symbols: Vec<CompletionItem> = vec![];
-
-        for record in file.into_inner() {
-            match record.as_rule() {
-                Rule::assign => symbols.push(CompletionItem {
-                    label: record.into_inner().next().unwrap().as_str().to_string(),
-                    kind: Some(CompletionItemKind::VARIABLE),
-                    ..Default::default()
-                }),
-                _ => {}
-            };
-        }
+        let symbols: Vec<CompletionItem> = self
+            .cache
+            .symbols
+            .get_mut(&cparams.text_document_position.text_document.uri.to_string())
+            .unwrap()
+            .to_vec();
 
         Ok(Some(CompletionResponse::Array(symbols)))
     }
@@ -166,7 +148,7 @@ async fn main() {
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        cache: DocumentCache::new(),
+        cache: SymbolCache::new(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

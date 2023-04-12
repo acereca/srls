@@ -1,5 +1,8 @@
 use dashmap::DashMap;
-use std::path::{Path, PathBuf};
+use pest::error::Error;
+use tower_lsp::lsp_types::CompletionItem;
+
+use crate::{parse_global_symbols, parse_skill};
 
 #[derive(PartialEq, Debug)]
 struct Position {
@@ -13,61 +16,45 @@ struct Range {
     to: Position,
 }
 
-#[derive(PartialEq, Debug)]
-struct CachedScope {
-    range: Range,
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct CachedItems {
-    global_tokens: Vec<String>,
-    scopes: Vec<CachedScope>,
-}
-
 #[derive(Debug)]
-pub struct DocumentCache {
-    pub documents: DashMap<PathBuf, CachedItems>,
+pub struct SymbolCache {
+    pub symbols: DashMap<String, Vec<CompletionItem>>,
 }
 
 #[derive(Debug, Clone)]
 struct FileNotInCache;
 
-impl DocumentCache {
-    pub fn new() -> DocumentCache {
-        DocumentCache {
-            documents: DashMap::new(),
+impl SymbolCache {
+    pub fn new() -> SymbolCache {
+        SymbolCache {
+            symbols: DashMap::new(),
         }
     }
 
-    pub fn update_document(&self, path: PathBuf, items: CachedItems) {
-        self.documents.insert(path, items);
+    pub fn update(&self, path: &str) -> Vec<CompletionItem> {
+        let parsed = parse_skill(path);
+        for rule in parsed {
+            match parse_global_symbols(rule) {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        }
+        return self.symbols.get(path).unwrap().to_vec();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::cache::{CachedItems, DocumentCache};
-    use std::collections::HashMap;
-    use std::path::Path;
+    use crate::cache::SymbolCache;
+    // use std::collections::HashMap;
+    // use std::path::Path;
 
     #[test]
     fn insert() {
-        let mut d = DocumentCache::new(Path::new("/example/workdir").to_path_buf());
-        d.update_document(
-            Path::new("example_file.ext").to_path_buf(),
-            CachedItems {
-                global_tokens: vec![],
-                scopes: vec![],
-            },
-        );
-        let mut comp = HashMap::new();
-        comp.insert(
-            Path::new("example_file.ext").to_path_buf(),
-            CachedItems {
-                global_tokens: vec![],
-                scopes: vec![],
-            },
-        );
-        assert_eq!(d.documents, comp)
+        let mut d = SymbolCache::new();
+        d.update();
+        // let mut comp = HashMap::new();
+        // comp.insert();
+        // assert_eq!(d.documents, comp)
     }
 }
