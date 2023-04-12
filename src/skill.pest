@@ -16,7 +16,7 @@ cstyle_list = @{ token ~ lisp_list}
 
 list = { (cstyle_list | lisp_list | lazy_list) }
 
-assign = {token ~ "=" ~ (inline_expr | list | token)}
+assign = {token ~ "=" ~ (inline_expr | list | token | literal)}
 inline_operand = _{(list | token | literal)}
 inline_operator = {("-" | "+" | "/" | "*")}
 inline_expr = {inline_operand ~ (inline_operator ~ inline_operand)+}
