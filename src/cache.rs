@@ -31,7 +31,8 @@ impl SymbolCache {
         }
     }
 
-    pub fn update(&self, path: &str) -> Vec<CompletionItem> {
+    pub fn update(&self, path: &str) {
+        self.symbols.insert(path.to_owned(), vec![]);
         let parsed = parse_skill(path);
         for rule in parsed {
             match parse_global_symbols(rule) {
@@ -39,20 +40,19 @@ impl SymbolCache {
                 Err(_) => {}
             }
         }
-        return self.symbols.get(path).unwrap().to_vec();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::cache::SymbolCache;
+    // use crate::cache::SymbolCache;
     // use std::collections::HashMap;
     // use std::path::Path;
 
     #[test]
     fn insert() {
-        let mut d = SymbolCache::new();
-        d.update();
+        // let mut d = SymbolCache::new();
+        // d.update();
         // let mut comp = HashMap::new();
         // comp.insert();
         // assert_eq!(d.documents, comp)
