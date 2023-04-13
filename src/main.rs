@@ -11,6 +11,9 @@ use tower_lsp::lsp_types::notification::Notification;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
+use log::{debug, info};
+use walkdir::WalkDir;
+
 extern crate glob;
 extern crate pest;
 #[macro_use]
@@ -51,29 +54,31 @@ impl LanguageServer for Backend {
         let root = init_params
             .root_uri
             .ok_or(Error::new(ErrorCode::InvalidParams))?;
-        self.client
-            .log_message(
-                MessageType::INFO,
-                format!("server initializing! ({:?})", root.path()),
-            )
-            .await;
+        info!(target: "Backend", "Initializing Language Server");
 
-        let pattern = root.path().to_string() + "/**/*.il";
-        self.client
-            .log_message(MessageType::INFO, format!("pattern used: {:?}", pattern))
-            .await;
+        let root_dir = root.path().to_string();
 
-        for entry in glob::glob(pattern.as_str()).expect("no file to cache in root_dir") {
-            match entry {
-                Ok(path) => {
-                    self.cache.update(path.to_str().unwrap());
-                    self.client
-                        .log_message(MessageType::INFO, format!("caching {:?}", path.display()))
-                        .await
+        info!(target: "Backend", "Caching started in '{}'", root_dir);
+
+        for entry in WalkDir::new(root_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let f_path = entry.path().to_str();
+            match f_path {
+                Some(path) => {
+                    if path.ends_with(".il") {
+                        info!("found '{}'", path);
+                        self.cache.update(path);
+                    }
                 }
-                Err(_) => {}
+                None => {}
             }
         }
+        info!(target: "Backend", "Caching finished. Found {} files.", self.cache.symbols.len());
+
+        debug!(target: "Backend", "{:?}", self.cache.symbols);
 
         Ok(InitializeResult {
             server_info: None,
@@ -142,7 +147,9 @@ impl LanguageServer for Backend {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt().init();
+    let writer = tracing_appender::rolling::never(".", "srls.out");
+    tracing_subscriber::fmt().with_writer(writer).init();
+    info!(target: "main", "Starting");
 
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
 
@@ -150,5 +157,6 @@ async fn main() {
         client,
         cache: SymbolCache::new(),
     });
+    info!("Creating server instance.");
     Server::new(stdin, stdout, socket).serve(service).await;
 }
