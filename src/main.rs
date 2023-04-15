@@ -83,6 +83,13 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
+                workspace: Some(WorkspaceServerCapabilities {
+                    workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                        supported: Some(true),
+                        change_notifications: Some(OneOf::Left(true)),
+                    }),
+                    file_operations: None,
+                }),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["custom/notification".to_string()],
                     work_done_progress_options: Default::default(),
@@ -134,14 +141,24 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, cparams: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let symbols: Vec<CompletionItem> = self
-            .cache
-            .symbols
-            .get_mut(&cparams.text_document_position.text_document.uri.to_string())
-            .unwrap()
-            .to_vec();
+        info!("triggered completion");
+        let path = cparams
+            .text_document_position
+            .text_document
+            .uri
+            .path()
+            .to_string();
+        info!("for: {:?}", path);
+        info!("with: {:?}", self.cache.symbols);
+        let resp = self.cache.symbols.get(&path);
+        info!("returned: {:?}", resp);
+        Ok(Some(CompletionResponse::Array(resp.unwrap().to_vec())))
+    }
 
-        Ok(Some(CompletionResponse::Array(symbols)))
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        let path = params.text_document.uri.path().to_string();
+        info!("updating cahce for {:?}", path);
+        self.cache.update(&path);
     }
 }
 

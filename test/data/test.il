@@ -13,7 +13,9 @@ token
 '(lazy list)
 cstyle(list with args)
 
-var = arg1 + arg2 - " A" / 12
+;;; precursor magnitude as controlvector
+tap_mag = arg1 + arg2 - " A" / 12
+var2 = "a"
 obj->op()
 
 (let (a (b 3))

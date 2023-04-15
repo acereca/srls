@@ -8,7 +8,7 @@ number = @{NUMBER+ ~ ("." ~ NUMBER+)? ~ ("e" ~ "-"? ~ NUMBER+)?}
 bool = {"t" | "nil"}
 literal = _{string | number | bool}
 
-COMMENT = _{";" ~ (!NEWLINE ~ ANY)* ~ NEWLINE}
+COMMENT = {";" ~ (!NEWLINE ~ ANY)* ~ NEWLINE}
 
 lisp_list = _{ "(" ~ expr* ~ ")" }
 lazy_list = _{ "'(" ~ expr* ~ ")" }
