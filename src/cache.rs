@@ -1,8 +1,8 @@
 use dashmap::DashMap;
-use pest::error::Error;
+use log::info;
 use tower_lsp::lsp_types::CompletionItem;
 
-use crate::{parse_global_symbols, parse_skill};
+use crate::parse_skill;
 
 #[derive(PartialEq, Debug)]
 struct Position {
@@ -32,14 +32,9 @@ impl SymbolCache {
     }
 
     pub fn update(&self, path: &str) {
-        self.symbols.insert(path.to_owned(), vec![]);
         let parsed = parse_skill(path);
-        for rule in parsed {
-            match parse_global_symbols(rule) {
-                Ok(_) => {}
-                Err(_) => {}
-            }
-        }
+        info!("parsed: {:?}", parsed);
+        self.symbols.insert(path.to_owned(), parsed);
     }
 }
 
