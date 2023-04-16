@@ -9,3 +9,15 @@ a language server for [Cadence SKILL](https://en.wikipedia.org/wiki/Cadence_SKIL
 ### Variable completion
 
 ![](https://git.acereca.net/acereca/srls/raw/branch/master/assets/variable_completion.GIF)
+
+variables assigned to using the infix `=` operator can be completed anywhere
+
+#### Custom docstrings
+
+```lisp
+;;; this is a custom docstring supported for variable definitions
+variable = "some content"
+```
+
+this allows for the docstring to show during completion
+
