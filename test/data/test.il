@@ -22,3 +22,5 @@ obj->op()
     expr1
     expr2
 )
+
+tap_mag
