@@ -17,3 +17,6 @@ dashmap = "5.4.0"
 log = "*"
 simple-logging = "2.0.2"
 walkdir = "*"
+
+[build]
+target = "x86_64-unknown-linux-musl"
