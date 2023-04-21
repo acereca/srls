@@ -1,13 +1,13 @@
 use log::info;
-use pest::error::Error;
+use pest::error::{Error, LineColLocation};
 use pest::iterators::Pair;
 use pest::Parser;
 use std::fs;
 
 use tower_lsp::lsp_types::{
     lsif::{EdgeDataMultiIn, Item, ItemKind},
-    CompletionItem, CompletionItemKind, CompletionItemLabelDetails, Documentation, MarkupContent,
-    MarkupKind,
+    CompletionItem, CompletionItemKind, CompletionItemLabelDetails, Diagnostic, DiagnosticSeverity,
+    Documentation, MarkupContent, MarkupKind, Position, Range,
 };
 
 #[derive(Parser)]
@@ -65,17 +65,40 @@ fn recurse_pairs<'a>(
     comment
 }
 
-pub fn parse_skill(path: &str) -> Vec<CompletionItem> {
-    let content = fs::read_to_string(path).expect("could not read file");
-    let parsed = SkillParser::parse(Rule::skill, &content);
-    let mut ret = vec![];
-    let mut last_comment: Option<String> = None;
-    for pairs in parsed.into_iter() {
-        for pair in pairs.into_iter() {
-            last_comment = recurse_pairs(pair, &mut ret, last_comment)
-        }
+pub fn parse_skill(path: &str) -> Result<Vec<CompletionItem>, Diagnostic> {
+    match fs::read_to_string(path) {
+        Ok(content) => match SkillParser::parse(Rule::skill, &content) {
+            Ok(parsed) => {
+                let mut ret = vec![];
+                let mut last_comment: Option<String> = None;
+                for pair in parsed.into_iter() {
+                    last_comment = recurse_pairs(pair, &mut ret, last_comment)
+                }
+                Ok(ret)
+            }
+            Err(err) => {
+                let pos: (usize, usize);
+                match err.line_col {
+                    LineColLocation::Pos(line_col) => pos = line_col,
+                    LineColLocation::Span(line_col, _) => pos = line_col,
+                }
+
+                Err(Diagnostic::new(
+                    Range::new(
+                        Position::new(pos.0 as u32 - 1, pos.1 as u32),
+                        Position::new(pos.0 as u32 - 1, pos.1 as u32),
+                    ),
+                    Some(DiagnosticSeverity::ERROR),
+                    None,
+                    Some(path.to_owned()),
+                    "some parse error".to_owned(),
+                    None,
+                    None,
+                ))
+            }
+        },
+        Err(err) => Ok(vec![]),
     }
-    ret
 }
 pub fn parse_global_symbols(token: Pair<Rule>) -> Result<&str, Error<Rule>> {
     Ok("")

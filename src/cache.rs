@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use log::info;
-use tower_lsp::lsp_types::CompletionItem;
+use tower_lsp::lsp_types::{CompletionItem, Diagnostic};
 
 use crate::parse_skill;
 
@@ -31,10 +31,11 @@ impl SymbolCache {
         }
     }
 
-    pub fn update(&self, path: &str) {
-        let parsed = parse_skill(path);
+    pub fn update(&self, path: &str) -> Result<Vec<CompletionItem>, Diagnostic> {
+        let parsed = parse_skill(path)?;
         info!("parsed: {:?}", parsed);
-        self.symbols.insert(path.to_owned(), parsed);
+        let ret = self.symbols.insert(path.to_owned(), parsed);
+        Ok(ret.unwrap_or(vec![]))
     }
 }
 

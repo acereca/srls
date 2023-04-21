@@ -1,4 +1,6 @@
 mod cache;
+use std::collections::HashMap;
+
 use cache::SymbolCache;
 
 mod skill;
@@ -70,7 +72,21 @@ impl LanguageServer for Backend {
                 Some(path) => {
                     if path.ends_with(".il") {
                         info!("found '{}'", path);
-                        self.cache.update(path);
+                        match self.cache.update(path) {
+                            Ok(_) => {}
+                            Err(err) => {
+                                self.client
+                                    .publish_diagnostics(
+                                        tower_lsp::lsp_types::Url::parse(
+                                            ("file://".to_owned() + &path).as_str(),
+                                        )
+                                        .unwrap(),
+                                        vec![err],
+                                        None,
+                                    )
+                                    .await;
+                            }
+                        }
                     }
                 }
                 None => {}
@@ -158,7 +174,20 @@ impl LanguageServer for Backend {
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let path = params.text_document.uri.path().to_string();
         info!("updating cahce for {:?}", path);
-        self.cache.update(&path);
+        self.client
+            .publish_diagnostics(
+                tower_lsp::lsp_types::Url::parse(("file://".to_owned() + &path).as_str()).unwrap(),
+                match self.cache.update(&path) {
+                    Ok(_) => {
+                        vec![]
+                    }
+                    Err(err) => {
+                        vec![err]
+                    }
+                },
+                None,
+            )
+            .await;
     }
 }
 
