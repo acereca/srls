@@ -1,9 +1,11 @@
 mod cache;
+use std::clone;
 use std::collections::HashMap;
 
 use cache::SymbolCache;
 
 mod skill;
+use dashmap::DashMap;
 use skill::{parse_global_symbols, parse_skill};
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +27,7 @@ extern crate pest_derive;
 struct Backend {
     client: Client,
     cache: SymbolCache,
+    diags: DashMap<String, Vec<Diagnostic>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -75,16 +78,7 @@ impl LanguageServer for Backend {
                         match self.cache.update(path) {
                             Ok(_) => {}
                             Err(err) => {
-                                self.client
-                                    .publish_diagnostics(
-                                        tower_lsp::lsp_types::Url::parse(
-                                            ("file://".to_owned() + &path).as_str(),
-                                        )
-                                        .unwrap(),
-                                        vec![err],
-                                        None,
-                                    )
-                                    .await;
+                                self.diags.insert(path.to_owned(), vec![err]);
                             }
                         }
                     }
@@ -123,14 +117,16 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        self.client
-            .log_message(MessageType::INFO, "server initialized!")
-            .await;
-        self.client
-            .send_notification::<CustomNotification>(CustomNotificationParams::new(
-                "title", "message",
-            ))
-            .await;
+        for (path, diags) in self.diags.clone().into_iter() {
+            self.client
+                .publish_diagnostics(
+                    tower_lsp::lsp_types::Url::parse(("file://".to_owned() + &path).as_str())
+                        .unwrap(),
+                    diags,
+                    None,
+                )
+                .await;
+        }
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -173,7 +169,7 @@ impl LanguageServer for Backend {
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let path = params.text_document.uri.path().to_string();
-        info!("updating cahce for {:?}", path);
+        info!("updating cache for {:?}", path);
         self.client
             .publish_diagnostics(
                 tower_lsp::lsp_types::Url::parse(("file://".to_owned() + &path).as_str()).unwrap(),
@@ -202,6 +198,7 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         cache: SymbolCache::new(),
+        diags: DashMap::new(),
     });
     info!("Creating server instance.");
     Server::new(stdin, stdout, socket).serve(service).await;
