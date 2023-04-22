@@ -2,6 +2,7 @@ use log::info;
 use pest::error::{Error, LineColLocation};
 use pest::iterators::Pair;
 use pest::Parser;
+use std::borrow::Cow;
 use std::fs;
 
 use tower_lsp::lsp_types::{
@@ -91,7 +92,10 @@ pub fn parse_skill(path: &str) -> Result<Vec<CompletionItem>, Diagnostic> {
                     Some(DiagnosticSeverity::ERROR),
                     None,
                     Some(path.to_owned()),
-                    "some parse error".to_owned(),
+                    match err.variant.message() {
+                        Cow::Borrowed(msg) => msg.to_owned(),
+                        Cow::Owned(msg) => msg,
+                    },
                     None,
                     None,
                 ))
