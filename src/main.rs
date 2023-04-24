@@ -162,9 +162,34 @@ impl LanguageServer for Backend {
             .to_string();
         info!("for: {:?}", path);
         info!("with: {:?}", self.cache.symbols);
-        let resp = self.cache.symbols.get(&path);
+        let resp = self.cache.symbols.get(&path).unwrap();
         info!("returned: {:?}", resp);
-        Ok(Some(CompletionResponse::Array(resp.unwrap().to_vec())))
+        Ok(Some(CompletionResponse::Array(
+            resp.iter()
+                .filter_map(|(range, completion)| match range {
+                    Some(range) => {
+                        let trigger_pos = cparams.text_document_position.position;
+                        let mut ret: Option<CompletionItem> = None;
+                        if trigger_pos.line > range.start.line && trigger_pos.line < range.end.line
+                        {
+                            ret = Some(completion.to_owned())
+                        } else {
+                            if trigger_pos.line == range.start.line {
+                                if trigger_pos.character > range.start.character {
+                                    ret = Some(completion.to_owned())
+                                }
+                            } else if trigger_pos.line == range.end.line {
+                                if trigger_pos.character < range.end.character {
+                                    ret = Some(completion.to_owned())
+                                }
+                            }
+                        };
+                        ret
+                    }
+                    None => Some(completion.to_owned()),
+                })
+                .collect(),
+        )))
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {

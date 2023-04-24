@@ -1,4 +1,4 @@
-**⚠ This language server is still in it infancy. It only partially supports the SKILL language and can break quite easily during usage. ⚠**
+**⚠ This language server is still in its infancy. It only partially supports the SKILL language and can break quite easily during usage. ⚠**
 
 # SKILL Rust Language Server - SRLS
 

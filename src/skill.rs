@@ -15,20 +15,32 @@ use tower_lsp::lsp_types::{
 #[grammar = "skill.pest"]
 pub struct SkillParser;
 
-fn parse_scope(scoped_pair: Pair<Rule>) -> (Range, Vec<CompletionItem>) {
+fn parse_scope(
+    scoped_pair: Pair<Rule>,
+    scope: Option<Range>,
+) -> Vec<(Option<Range>, CompletionItem)> {
     let mut catalog: Vec<CompletionItem> = vec![];
-    let (start, end) = scoped_pair.as_span().split();
     for inner in scoped_pair.into_inner() {
         info!("{:?}", inner);
         match inner.as_rule() {
-            Rule::token => catalog.push(CompletionItem::new_simple(
-                inner.as_str().to_owned(),
-                "local".to_owned(),
-            )),
-            Rule::list => catalog.push(CompletionItem::new_simple(
-                inner.into_inner().next().unwrap().as_str().to_owned(),
-                "local".to_owned(),
-            )),
+            Rule::token => catalog.push(CompletionItem {
+                label: inner.as_str().to_owned(),
+                kind: Some(CompletionItemKind::VARIABLE),
+                label_details: Some(CompletionItemLabelDetails {
+                    description: None,
+                    detail: Some("local".to_owned()),
+                }),
+                ..Default::default()
+            }),
+            Rule::list => catalog.push(CompletionItem {
+                label: inner.into_inner().next().unwrap().as_str().to_owned(),
+                kind: Some(CompletionItemKind::VARIABLE),
+                label_details: Some(CompletionItemLabelDetails {
+                    description: None,
+                    detail: Some("local".to_owned()),
+                }),
+                ..Default::default()
+            }),
             _ => {
                 warn!(
                     "illegal expr in scoped variable definition {:?}",
@@ -37,22 +49,17 @@ fn parse_scope(scoped_pair: Pair<Rule>) -> (Range, Vec<CompletionItem>) {
             }
         }
     }
-    let (start_line, start_col) = start.line_col();
-    let (end_line, end_col) = end.line_col();
-    (
-        Range::new(
-            Position::new(start_line as u32 - 1, start_col as u32),
-            Position::new(end_line as u32 - 1, end_col as u32),
-        ),
-        catalog,
-    )
+    catalog
+        .into_iter()
+        .map(|completion| (scope, completion))
+        .collect()
 }
 
 fn recurse_pairs<'a>(
     ps: Pair<Rule>,
-    catalog: &'a mut HashMap<Range, Vec<CompletionItem>>,
+    catalog: &'a mut Vec<(Option<Range>, CompletionItem)>,
     last_comment: Option<String>,
-    mut scoped: bool,
+    mut scoped: Option<Range>,
 ) -> Option<String> {
     let mut comment = last_comment;
     match ps.as_rule() {
@@ -64,15 +71,25 @@ fn recurse_pairs<'a>(
         }
         Rule::list => {
             comment = None;
+            let (pair_start_line, pair_start_col) = ps.as_span().start_pos().line_col();
+            let (pair_end_line, pair_end_col) = ps.as_span().end_pos().line_col();
             for (ix, p) in ps.into_inner().enumerate() {
                 if ix == 0 && p.as_str() == "let" {
-                    scoped = true;
+                    scoped = Some(Range::new(
+                        Position::new(pair_start_line as u32 - 1, pair_start_col as u32 - 1),
+                        Position::new(pair_end_line as u32 - 1, pair_end_col as u32 - 1),
+                    ));
                 } else {
-                    if scoped && ix == 1 {
-                        let scope_catalog = parse_scope(p);
-                        scoped = false;
-                    } else {
-                        comment = recurse_pairs(p, catalog, comment, scoped);
+                    match scoped {
+                        Some(_) => {
+                            for scoped_completion in parse_scope(p, scoped) {
+                                catalog.push(scoped_completion)
+                            }
+                            scoped = None;
+                        }
+                        None => {
+                            comment = recurse_pairs(p, catalog, comment, scoped);
+                        }
                     }
                 }
             }
@@ -86,20 +103,22 @@ fn recurse_pairs<'a>(
         }
         Rule::assign => {
             let k = ps.into_inner().next().unwrap();
-            let local_catalog = catalog.get(Range::new(Position::new(0, 0), Position::new(0, 0)));
-            catalog.push(CompletionItem {
-                label: k.as_str().to_owned(),
-                kind: Some(CompletionItemKind::VARIABLE),
-                detail: match &comment {
-                    Some(s) => Some(s.to_owned()),
-                    None => None,
+            catalog.push((
+                None,
+                CompletionItem {
+                    label: k.as_str().to_owned(),
+                    kind: Some(CompletionItemKind::VARIABLE),
+                    detail: match &comment {
+                        Some(s) => Some(s.to_owned()),
+                        None => None,
+                    },
+                    label_details: Some(CompletionItemLabelDetails {
+                        description: None,
+                        detail: Some("global".to_owned()),
+                    }),
+                    ..Default::default()
                 },
-                label_details: Some(CompletionItemLabelDetails {
-                    description: None,
-                    detail: Some("global".to_owned()),
-                }),
-                ..Default::default()
-            });
+            ));
             comment = None;
         }
         _ => {
@@ -109,14 +128,14 @@ fn recurse_pairs<'a>(
     comment
 }
 
-pub fn parse_skill(path: &str) -> Result<HashMap<Range, Vec<CompletionItem>>, Diagnostic> {
+pub fn parse_skill(path: &str) -> Result<Vec<(Option<Range>, CompletionItem)>, Diagnostic> {
     match fs::read_to_string(path) {
         Ok(content) => match SkillParser::parse(Rule::skill, &content) {
             Ok(parsed) => {
-                let mut ret: HashMap<Range, Vec<CompletionItem>> = HashMap::new();
+                let mut ret: Vec<(Option<Range>, CompletionItem)> = vec![];
                 let mut last_comment: Option<String> = None;
                 for pair in parsed.into_iter() {
-                    last_comment = recurse_pairs(pair, &mut ret, last_comment, false)
+                    last_comment = recurse_pairs(pair, &mut ret, last_comment, None)
                 }
                 Ok(ret)
             }
@@ -144,7 +163,7 @@ pub fn parse_skill(path: &str) -> Result<HashMap<Range, Vec<CompletionItem>>, Di
                 ))
             }
         },
-        Err(err) => Ok(HashMap::new()),
+        Err(err) => Ok(vec![]),
     }
 }
 pub fn parse_global_symbols(token: Pair<Rule>) -> Result<&str, Error<Rule>> {
