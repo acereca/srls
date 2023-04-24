@@ -1,24 +1,14 @@
 use dashmap::DashMap;
 use log::info;
-use tower_lsp::lsp_types::{CompletionItem, Diagnostic};
+use tower_lsp::lsp_types::{CompletionItem, Diagnostic, Range};
 
 use crate::parse_skill;
 
-#[derive(PartialEq, Debug)]
-struct Position {
-    line: u32,
-    character: u16,
-}
-
-#[derive(PartialEq, Debug)]
-struct Range {
-    from: Position,
-    to: Position,
-}
+type ScopedCompletions = Vec<(Option<Range>, CompletionItem)>;
 
 #[derive(Debug)]
 pub struct SymbolCache {
-    pub symbols: DashMap<String, Vec<CompletionItem>>,
+    pub symbols: DashMap<String, ScopedCompletions>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +21,7 @@ impl SymbolCache {
         }
     }
 
-    pub fn update(&self, path: &str) -> Result<Vec<CompletionItem>, Diagnostic> {
+    pub fn update(&self, path: &str) -> Result<ScopedCompletions, Diagnostic> {
         let parsed = parse_skill(path)?;
         info!("parsed: {:?}", parsed);
         let ret = self.symbols.insert(path.to_owned(), parsed);

@@ -1,4 +1,4 @@
-**⚠ This language server is still in it infancy. It only partially supports the SKILL language and can break quite easily during usage. ⚠**
+**⚠ This language server is still in its infancy. It only partially supports the SKILL language and can break quite easily during usage. ⚠**
 
 # SKILL Rust Language Server - SRLS
 
@@ -11,6 +11,9 @@ a language server for [Cadence SKILL](https://en.wikipedia.org/wiki/Cadence_SKIL
 ![](https://git.acereca.net/acereca/srls/raw/branch/master/assets/variable_completion.GIF)
 
 variables assigned to using the infix `=` operator can be completed anywhere
+
+- both global and local
+- local variables are only completed within their scope
 
 #### Custom docstrings
 

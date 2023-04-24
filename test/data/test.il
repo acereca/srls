@@ -19,8 +19,15 @@ var2 = "a"
 obj->op()
 
 (let (a (b 3))
-    expr1
-    expr2
-)
 
-tap_mag
+    expr1
+    expr2   
+)
+  
+    
+
+(let (c d e a)
+    sprintf(c)
+    inner_var = "a"
+    a
+)
