@@ -12,6 +12,9 @@ a language server for [Cadence SKILL](https://en.wikipedia.org/wiki/Cadence_SKIL
 
 variables assigned to using the infix `=` operator can be completed anywhere
 
+- both global and local
+- local variables are only completed within their scope
+
 #### Custom docstrings
 
 ```lisp
