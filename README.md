@@ -33,14 +33,14 @@ using [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
 install `srls` into your path or give the `cmd` table entry the absolute path:
 
 ```lua
-
-local nvim_lsp = require('lspconfig')
-
-nvim_lsp.srls.setup({
-    cmd = {"srls"},
-    filetypes = {"skill"},
-    root_dir = root_pattern(".git")
-})
+require('lspconfig.configs').srls = {
+    default_config = {
+        cmd = {"srls"},
+        filetypes = {"skill"},
+        root_dir = require('lspconfig.util').root_pattern(".git")
+    }
+}
+require('lspconfig').srls.setup({})
 ```
 
 #### astronvim
