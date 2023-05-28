@@ -18,6 +18,8 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 use log::{debug, info};
 use walkdir::WalkDir;
 
+mod token;
+
 extern crate glob;
 extern crate pest;
 #[macro_use]
