@@ -2,24 +2,32 @@ use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, DocumentSymbol, Documentation, Position, Range, SymbolKind,
 };
 
-#[derive(Debug)]
-pub enum TokenScope<'a> {
-    Global,
-    Local(&'a Token<'a>),
+#[derive(Debug, Clone)]
+pub enum TokenScope {
+    Global(Position),
+    Local(Range),
 }
 
-impl<'a> TokenScope<'a> {
-    fn value(&'a self) -> &str {
+impl TokenScope {
+    pub fn value(&self) -> &str {
         match self {
             TokenScope::Local(_) => "local",
-            TokenScope::Global => "global",
+            TokenScope::Global(_) => "global",
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub enum TokenUse<'a> {
+    Declaration,
+    Instantiation { decl: &'a Token },
+    Use { decl: &'a Token, inst: &'a Token },
+}
+
+#[derive(Debug, Clone)]
 pub enum TokenKind {
-    Variable,
+    VariableAssignment,
+    VariableUse,
     Function,
     Struct,
 }
@@ -27,50 +35,56 @@ pub enum TokenKind {
 impl TokenKind {
     fn to_completion_item_kind(&self) -> CompletionItemKind {
         match self {
-            TokenKind::Variable => CompletionItemKind::VARIABLE,
+            TokenKind::VariableAssignment => CompletionItemKind::VARIABLE,
             TokenKind::Function => CompletionItemKind::FUNCTION,
             TokenKind::Struct => CompletionItemKind::STRUCT,
+            TokenKind::VariableUse => CompletionItemKind::VARIABLE,
         }
     }
 
     fn to_document_symbol_kind(&self) -> SymbolKind {
         match self {
-            TokenKind::Variable => SymbolKind::VARIABLE,
+            TokenKind::VariableAssignment => SymbolKind::VARIABLE,
             TokenKind::Function => SymbolKind::FUNCTION,
             TokenKind::Struct => SymbolKind::STRUCT,
+            TokenKind::VariableUse => SymbolKind::VARIABLE,
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Token<'a> {
+#[derive(Debug, Clone)]
+pub struct Token {
     /// kind of token
-    kind: TokenKind,
+    pub kind: TokenKind,
 
     /// scope the token is declared for
-    scope: TokenScope<'a>,
+    pub scope: TokenScope,
 
     /// name of the token
-    name: String,
+    pub name: String,
 
-    documentation: Option<String>,
+    pub info: Option<String>,
+
+    pub documentation: Option<String>,
 
     /// if the token declares a scope this range will encompass it
-    encloses: Option<Range>,
+    pub encloses: Option<Range>,
 
     /// place of declaration for the token (most likely the line)
-    place: Range,
+    pub place: Range,
 }
 
-impl<'a> Token<'a> {
+impl Token {
     pub fn in_scope(&self, at: Position) -> bool {
         match self.scope {
-            TokenScope::Global => true,
-            TokenScope::Local(scoping_token) => scoping_token.encloses.map_or(false, |scope| {
-                (at.line > scope.start.line && at.line < scope.end.line)
-                    || (at.line == scope.start.line && at.character > scope.start.character)
-                    || (at.line == scope.end.line && at.character < scope.end.character)
-            }),
+            TokenScope::Global(from) => {
+                from.line < at.line || (from.line == at.line && from.character < at.character)
+            }
+            TokenScope::Local(from_to) => {
+                (at.line > from_to.start.line && at.line < from_to.end.line)
+                    || (at.line == from_to.start.line && at.character > from_to.start.character)
+                    || (at.line == from_to.end.line && at.character < from_to.end.character)
+            }
         }
     }
 
@@ -113,13 +127,17 @@ impl<'a> Token<'a> {
 mod tests {
     use tower_lsp::lsp_types::{Position, Range};
 
-    use crate::token::{Token, TokenKind, TokenScope};
+    use crate::token::{Token, TokenKind, TokenScope, TokenUse};
     #[test]
     fn token_scope() {
         let tok = Token {
             kind: TokenKind::Function,
-            scope: TokenScope::Global,
+            scope: TokenScope::Global(Position {
+                line: 2,
+                character: 0,
+            }),
             name: "someVar".to_string(),
+            info: None,
             documentation: None,
             encloses: Some(Range {
                 start: Position {
@@ -143,9 +161,10 @@ mod tests {
             },
         };
         let tok2 = Token {
-            kind: TokenKind::Variable,
-            scope: TokenScope::Local(&tok),
+            kind: TokenKind::VariableAssignment,
+            scope: TokenScope::Local(tok.encloses.unwrap()),
             name: "someOtherVar".to_string(),
+            info: None,
             documentation: Some("Some description".to_string()),
             encloses: None,
             place: Range {

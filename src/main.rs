@@ -1,15 +1,13 @@
 mod cache;
-use std::clone;
-use std::collections::HashMap;
 
-use cache::SymbolCache;
+use cache::TokenCache;
 
 mod skill;
 use dashmap::DashMap;
-use skill::{parse_global_symbols, parse_skill};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use token::TokenKind;
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::notification::Notification;
 use tower_lsp::lsp_types::*;
@@ -22,13 +20,14 @@ mod token;
 
 extern crate glob;
 extern crate pest;
+extern crate regex;
 #[macro_use]
 extern crate pest_derive;
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    cache: SymbolCache,
+    cache: TokenCache,
     diags: DashMap<String, Vec<Diagnostic>>,
 }
 
@@ -55,6 +54,22 @@ impl Notification for CustomNotification {
     const METHOD: &'static str = "custom/notification";
 }
 
+fn pos_in_range(pos: &Position, range: &Range) -> bool {
+    ((pos.line > range.start.line) && (pos.line < range.start.line))
+        || (pos.line == range.start.line && pos.character >= range.start.character)
+        || (pos.line == range.end.line && pos.character <= range.end.character)
+}
+
+async fn update_diagnostics(client: &Client, for_file: &str, diagnostics: Vec<Diagnostic>) {
+    client
+        .publish_diagnostics(
+            tower_lsp::lsp_types::Url::parse(("file://".to_owned() + for_file).as_str()).unwrap(),
+            diagnostics,
+            None,
+        )
+        .await;
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, init_params: InitializeParams) -> Result<InitializeResult> {
@@ -77,19 +92,14 @@ impl LanguageServer for Backend {
                 Some(path) => {
                     if path.ends_with(".il") {
                         info!("found '{}'", path);
-                        match self.cache.update(path) {
-                            Ok(_) => {}
-                            Err(err) => {
-                                self.diags.insert(path.to_owned(), vec![err]);
-                            }
-                        }
+                        let (_, parsed_errors) = self.cache.update(path);
+                        self.diags.insert(path.to_owned(), parsed_errors);
                     }
                 }
                 None => {}
             }
         }
         info!(target: "Backend", "Caching finished. Found {} files.", self.cache.symbols.len());
-
         debug!(target: "Backend", "{:?}", self.cache.symbols);
 
         Ok(InitializeResult {
@@ -113,6 +123,7 @@ impl LanguageServer for Backend {
                     all_commit_characters: None,
                     ..Default::default()
                 }),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -120,14 +131,7 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         for (path, diags) in self.diags.clone().into_iter() {
-            self.client
-                .publish_diagnostics(
-                    tower_lsp::lsp_types::Url::parse(("file://".to_owned() + &path).as_str())
-                        .unwrap(),
-                    diags,
-                    None,
-                )
-                .await;
+            update_diagnostics(&self.client, &path, diags).await;
         }
     }
 
@@ -166,51 +170,100 @@ impl LanguageServer for Backend {
         info!("with: {:?}", self.cache.symbols);
         let resp = self.cache.symbols.get(&path).unwrap();
         info!("returned: {:?}", resp);
-        Ok(Some(CompletionResponse::Array(
-            resp.iter()
-                .filter_map(|(range, completion)| match range {
-                    Some(range) => {
-                        let trigger_pos = cparams.text_document_position.position;
-                        let mut ret: Option<CompletionItem> = None;
-                        if trigger_pos.line > range.start.line && trigger_pos.line < range.end.line
-                        {
-                            ret = Some(completion.to_owned())
-                        } else {
-                            if trigger_pos.line == range.start.line {
-                                if trigger_pos.character > range.start.character {
-                                    ret = Some(completion.to_owned())
-                                }
-                            } else if trigger_pos.line == range.end.line {
-                                if trigger_pos.character < range.end.character {
-                                    ret = Some(completion.to_owned())
-                                }
-                            }
-                        };
-                        ret
-                    }
-                    None => Some(completion.to_owned()),
-                })
-                .collect(),
-        )))
+        // Ok(Some(CompletionResponse::Array(
+        //     resp.iter()
+        //         .filter_map(|(range, completion)| match range {
+        //             Some(range) => {
+        //                 let trigger_pos = cparams.text_document_position.position;
+        //                 let mut ret: Option<CompletionItem> = None;
+        //                 if trigger_pos.line > range.start.line && trigger_pos.line < range.end.line
+        //                 {
+        //                     ret = Some(completion.to_owned())
+        //                 } else {
+        //                     if trigger_pos.line == range.start.line {
+        //                         if trigger_pos.character > range.start.character {
+        //                             ret = Some(completion.to_owned())
+        //                         }
+        //                     } else if trigger_pos.line == range.end.line {
+        //                         if trigger_pos.character < range.end.character {
+        //                             ret = Some(completion.to_owned())
+        //                         }
+        //                     }
+        //                 };
+        //                 ret
+        //             }
+        //             None => Some(completion.to_owned()),
+        //         })
+        //         .collect(),
+        // )))
+        Ok(Some(CompletionResponse::Array(vec![])))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        info!("doc/hover: {:?}", params.clone());
+        let document_hover_pos = &params.text_document_position_params.position;
+        let document_tokens = self.cache.symbols.get(
+            params
+                .text_document_position_params
+                .text_document
+                .uri
+                .path(),
+        );
+        let matched = document_tokens.map_or(None, |toks| {
+            let found = toks
+                .iter()
+                .filter(|tok| pos_in_range(document_hover_pos, &tok.place))
+                .next()
+                .map(|tok| tok.clone());
+
+            info!("{:?} at {:?}", found.clone(), document_hover_pos);
+
+            match found {
+                Some(found_token) => toks
+                    .iter()
+                    .filter(|tok| match tok.kind {
+                        TokenKind::VariableAssignment => found_token.name == tok.name,
+                        _ => false,
+                    })
+                    .next()
+                    .map(|tok| tok.clone()),
+                None => None,
+            }
+        });
+
+        let ret = Ok(matched.map_or(None, |tok| {
+            let name = tok.name;
+            let scope = tok.scope.value();
+            let line = tok.place.start.line;
+            let file = params
+                .text_document_position_params
+                .text_document
+                .uri
+                .path();
+            let doc = tok.documentation;
+            tok.info.map(|info| Hover {
+                contents: HoverContents::Scalar(MarkedString::String(format!(
+                    "*{scope}* **{name}**\n\nline {line}:\n```lisp\n  {info}\n```\n---\n{doc}",
+                    scope = scope,
+                    name = name,
+                    line = line,
+                    info = info,
+                    doc = doc.unwrap_or("".to_string())
+                ))),
+                range: None,
+            })
+        }));
+
+        info!("{:?}", ret.clone());
+        ret
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let path = params.text_document.uri.path().to_string();
-        info!("updating cache for {:?}", path);
-        self.client
-            .publish_diagnostics(
-                tower_lsp::lsp_types::Url::parse(("file://".to_owned() + &path).as_str()).unwrap(),
-                match self.cache.update(&path) {
-                    Ok(_) => {
-                        vec![]
-                    }
-                    Err(err) => {
-                        vec![err]
-                    }
-                },
-                None,
-            )
-            .await;
+        info!("updating cache for {:?}", path.clone());
+        let (_, parsed_errors) = self.cache.update(path.as_ref());
+        self.diags.insert(path.to_owned(), parsed_errors.clone());
+        update_diagnostics(&self.client, &path, parsed_errors).await;
     }
 }
 
@@ -224,7 +277,7 @@ async fn main() {
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        cache: SymbolCache::new(),
+        cache: TokenCache::new(),
         diags: DashMap::new(),
     });
     info!("Creating server instance.");
