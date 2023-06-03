@@ -39,3 +39,7 @@ var2
 (procedure prod(param1 @keys (key_param "key_param_default"))
 
 )
+
+tap_mag = 3
+
+tap_mag

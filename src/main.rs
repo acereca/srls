@@ -243,7 +243,7 @@ impl LanguageServer for Backend {
             let doc = tok.documentation;
             tok.info.map(|info| Hover {
                 contents: HoverContents::Scalar(MarkedString::String(format!(
-                    "*{scope}* **{name}**\n\nline {line}:\n```lisp\n  {info}\n```\n---\n{doc}",
+                    "*{scope}* **{name}**\n\n*declared on line {line}*:\n```lisp\n  {info}\n```\n---\n{doc}",
                     scope = scope,
                     name = name,
                     line = line,
