@@ -30,15 +30,19 @@ pub enum TokenKind {
     VariableUse,
     Function,
     Struct,
+    List,
+    LetBlock,
 }
 
 impl TokenKind {
-    fn to_completion_item_kind(&self) -> CompletionItemKind {
+    fn to_completion_item_kind(&self) -> Option<CompletionItemKind> {
         match self {
-            TokenKind::VariableAssignment => CompletionItemKind::VARIABLE,
-            TokenKind::Function => CompletionItemKind::FUNCTION,
-            TokenKind::Struct => CompletionItemKind::STRUCT,
-            TokenKind::VariableUse => CompletionItemKind::VARIABLE,
+            TokenKind::VariableAssignment => Some(CompletionItemKind::VARIABLE),
+            TokenKind::Function => Some(CompletionItemKind::FUNCTION),
+            TokenKind::Struct => Some(CompletionItemKind::STRUCT),
+            TokenKind::VariableUse => Some(CompletionItemKind::VARIABLE),
+            TokenKind::List => None,
+            TokenKind::LetBlock => None,
         }
     }
 
@@ -48,6 +52,8 @@ impl TokenKind {
             TokenKind::Function => SymbolKind::FUNCTION,
             TokenKind::Struct => SymbolKind::STRUCT,
             TokenKind::VariableUse => SymbolKind::VARIABLE,
+            TokenKind::List => SymbolKind::ARRAY,
+            TokenKind::LetBlock => SymbolKind::NAMESPACE,
         }
     }
 }
@@ -92,7 +98,7 @@ impl Token {
         if at.map_or(true, |pos| self.in_scope(pos)) {
             Some(CompletionItem {
                 label: self.name.to_owned(),
-                kind: Some(self.kind.to_completion_item_kind()),
+                kind: self.kind.to_completion_item_kind(),
                 detail: Some(self.scope.value().to_owned()),
                 documentation: self
                     .documentation

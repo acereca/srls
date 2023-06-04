@@ -4,6 +4,7 @@ use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use regex::Regex;
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
@@ -194,9 +195,34 @@ fn parse_skill_pairs(pairs: Pairs<Rule>) -> Vec<Pair<Rule>> {
     for pair in pairs {
         match pair.as_rule() {
             Rule::COMMENT | Rule::token => collection.push(pair),
-            Rule::skill | Rule::list | Rule::cstyle_list | Rule::assign => {
+            Rule::skill | Rule::assign => {
                 collection.push(pair.clone());
                 collection.append(parse_skill_pairs(pair.into_inner()).as_mut())
+            }
+            Rule::list | Rule::cstyle_list => {
+                collection.push(pair.clone());
+                collection.append(parse_skill_pairs(pair.into_inner()).as_mut())
+                // let inners = pair.into_inner();
+                // match inners.peek() {
+                //     Some(first_inner_pair) => match first_inner_pair.as_rule() {
+                //         Rule::keywords => {
+                //             let parser: fn(Pairs<Rule>) -> Vec<Pair<Rule>> =
+                //                 inners.peek().map_or(parse_skill_pairs, |keyword| {
+                //                     match keyword.as_str() {
+                //                         "let" => parse_let,
+                //                         _ => parse_skill_pairs,
+                //                     }
+                //                 });
+                //             collection.append(parser(inners).as_mut());
+                //         }
+                //         _ => {
+                //             collection.append(parse_skill_pairs(inners).as_mut());
+                //         }
+                //     },
+                //     None => {
+                //         collection.append(parse_skill_pairs(inners).as_mut());
+                //     }
+                // }
             }
             _ => {
                 println!(
@@ -212,6 +238,48 @@ fn parse_skill_pairs(pairs: Pairs<Rule>) -> Vec<Pair<Rule>> {
     }
 
     collection
+}
+
+fn variable_declaration(name: &str, scope: Range, info: &str, place: Range) -> Token {
+    Token {
+        kind: TokenKind::VariableAssignment,
+        scope: TokenScope::Local(scope),
+        documentation: None,
+        name: name.to_string(),
+        info: Some(info.to_string()),
+        encloses: None,
+        place,
+    }
+}
+
+fn parse_scoped_vars(pairs: Pairs<Rule>, scope: &Range) -> Vec<Token> {
+    let mut passed_assigns = vec![];
+
+    for p in pairs {
+        match p.as_rule() {
+            Rule::list => {
+                let info = p.as_str();
+                let f = p.clone().into_inner().peek().unwrap();
+                passed_assigns.push(variable_declaration(
+                    f.as_str(),
+                    scope.to_owned(),
+                    info,
+                    range_of_pair(&p),
+                ))
+            }
+            Rule::token => {
+                passed_assigns.push(variable_declaration(
+                    p.as_str(),
+                    scope.to_owned(),
+                    format!("({} nil)", p.as_str()).as_str(),
+                    range_of_pair(&p),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    passed_assigns
 }
 
 fn parse_flat_pairs(pairs: Vec<Pair<Rule>>) -> (Vec<Token>, Vec<Diagnostic>) {
@@ -282,6 +350,80 @@ fn parse_flat_pairs(pairs: Vec<Pair<Rule>>) -> (Vec<Token>, Vec<Diagnostic>) {
                     encloses: None,
                     place: range,
                 });
+            }
+            Rule::list => {
+                let range = range_of_pair(&pair);
+                let info = pair
+                    .as_str()
+                    .split("\n")
+                    .next()
+                    .map(|info| info.to_string());
+
+                match pair.clone().into_inner().peek().map_or(None, |first| {
+                    let kw = first.as_str();
+                    match kw {
+                        "let" => Some(kw),
+                        _ => None,
+                    }
+                }) {
+                    Some(_) => {
+                        parsed_tokens.push(Token {
+                            kind: TokenKind::LetBlock,
+                            scope: TokenScope::Local(range),
+                            info,
+                            name: format!("let:{line}", line = range.start.line),
+                            documentation: if last_comment.0.line == range.start.line {
+                                Some(last_comment.1.to_string())
+                            } else {
+                                None
+                            },
+                            encloses: Some(range),
+                            place: range,
+                        });
+
+                        active_scope = Some(range);
+                    }
+                    None => match active_scope {
+                        Some(scope) => {
+                            let mut variables = parse_scoped_vars(pair.into_inner(), &scope);
+
+                            parsed_declarations.append(
+                                variables
+                                    .clone()
+                                    .iter()
+                                    .map(|tok| tok.name.clone())
+                                    .collect::<Vec<_>>()
+                                    .as_mut(),
+                            );
+                            parsed_tokens.append(variables.as_mut());
+
+                            active_scope = None;
+                        }
+                        None => {
+                            // parsed_tokens.push(Token {
+                            //     kind: TokenKind::List,
+                            //     scope: TokenScope::Local(range),
+                            //     info,
+                            //     name: format!("list:{line}", line = range.start.line),
+                            //     documentation: if last_comment.0.line == range.start.line {
+                            //         Some(last_comment.1.to_string())
+                            //     } else {
+                            //         None
+                            //     },
+                            //     encloses: Some(range),
+                            //     place: range,
+                            // });
+                        }
+                    },
+                };
+
+                // println!("");
+                // println!(
+                //     "let: {}, {:?}",
+                //     first_pair(&pair.clone().into_inner()),
+                //     pair.clone()
+                // );
+                // println!("");
             }
             _ => {
                 println!(

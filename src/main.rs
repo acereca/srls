@@ -55,7 +55,7 @@ impl Notification for CustomNotification {
 }
 
 fn pos_in_range(pos: &Position, range: &Range) -> bool {
-    ((pos.line > range.start.line) && (pos.line < range.start.line))
+    ((pos.line > range.start.line) && (pos.line < range.end.line))
         || (pos.line == range.start.line && pos.character >= range.start.character)
         || (pos.line == range.end.line && pos.character <= range.end.character)
 }
@@ -212,7 +212,12 @@ impl LanguageServer for Backend {
         let matched = document_tokens.map_or(None, |toks| {
             let found = toks
                 .iter()
+                .filter(|tok| match tok.kind {
+                    TokenKind::VariableUse => true,
+                    _ => false,
+                })
                 .filter(|tok| pos_in_range(document_hover_pos, &tok.place))
+                .rev()
                 .next()
                 .map(|tok| tok.clone());
 
@@ -235,11 +240,6 @@ impl LanguageServer for Backend {
             let name = tok.name;
             let scope = tok.scope.value();
             let line = tok.place.start.line;
-            let file = params
-                .text_document_position_params
-                .text_document
-                .uri
-                .path();
             let doc = tok.documentation;
             tok.info.map(|info| Hover {
                 contents: HoverContents::Scalar(MarkedString::String(format!(

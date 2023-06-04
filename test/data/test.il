@@ -34,6 +34,8 @@ var2
     sprintf(c)
     inner_var = "a"
     a
+
+    (some list a)
 )
 
 (procedure prod(param1 @keys (key_param "key_param_default"))

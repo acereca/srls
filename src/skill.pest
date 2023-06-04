@@ -6,8 +6,9 @@ token      =  @{ LETTER ~ token_char* }
 string = @{"\"" ~ (!"\"" ~ ANY)* ~ "\""}
 number = @{NUMBER+ ~ ("." ~ NUMBER+)? ~ ("e" ~ "-"? ~ NUMBER+)?}
 bool = {"t" | "nil"}
-keywords = {"@keys" | "@rest" | "let" | "procedure" | "load" | "list"}
-literal = ${ (string | number | bool | keywords) ~ !token_char}
+keywords = ${("@keys" | "@rest" | "let" | "procedure" | "load" | "list") ~ !token_char}
+literal = ${ (string | number | bool) ~ !token_char}
+
 
 normal_comment = _{(!NEWLINE ~ ANY)}
 docstring = {";;" ~ ((NEWLINE ~ ";;;") | normal_comment)*}
@@ -19,13 +20,13 @@ cstyle_list = @{ token ~ lisp_list}
 
 list = { (cstyle_list | lisp_list | lazy_list) }
 
-assign = {token ~ "=" ~ (inline_expr | list | literal | token)}
-inline_operand = _{(list | literal | token)}
+assign = {token ~ "=" ~ (inline_expr | list |keywords| literal | token)}
+inline_operand = _{(list |keywords| literal | token)}
 inline_operator = {("-" | "+" | "/" | "*")}
 inline_expr = {inline_operand ~ (inline_operator ~ inline_operand)+}
 
 get_operator = {("->" | "~>")}
 get = {token ~ get_operator ~ (list | token)}
 
-expr = _{(get | assign | list | literal | token)}
+expr = _{(get | assign | list | keywords | literal | token)}
 skill = { SOI ~ expr* ~ EOI }
